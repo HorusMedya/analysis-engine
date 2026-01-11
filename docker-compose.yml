@@ -1,0 +1,141 @@
+version: '3.8'
+
+# Benim Analizlerim - Docker Compose
+# Coolify ile uyumlu
+
+services:
+  # ============================================
+  # PostgreSQL - Analiz Veritabanı
+  # ============================================
+  postgres-analysis:
+    image: postgres:16-alpine
+    container_name: analysis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: analysis_db
+      POSTGRES_USER: analysis_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"  # Farklı port (mevcut PostgreSQL ile çakışmasın)
+    deploy:
+      resources:
+        limits:
+          cpus: '16'
+          memory: 32G
+        reservations:
+          cpus: '8'
+          memory: 16G
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=500"
+      - "-c"
+      - "shared_buffers=8GB"
+      - "-c"
+      - "effective_cache_size=24GB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "maintenance_work_mem=2GB"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analysis_user -d analysis_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis - Queue & Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: analysis-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # Farklı port
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    command: redis-server --maxmemory 3gb --maxmemory-policy allkeys-lru --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Celery Workers - Python Analysis Engine
+  # ============================================
+  celery-worker:
+    build:
+      context: ./python-worker
+      dockerfile: Dockerfile
+    image: analysis-worker:latest
+    container_name: analysis-worker
+    restart: unless-stopped
+    depends_on:
+      postgres-analysis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://analysis_user:${POSTGRES_PASSWORD:-changeme}@postgres-analysis:5432/analysis_db
+      MAIN_DB_URL: ${MAIN_DATABASE_URL}  # Mevcut odds veritabanı
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      
+      # Worker settings
+      CELERY_CONCURRENCY: 1
+      WORKER_MAX_MEMORY: 4000  # MB
+    deploy:
+      mode: replicated
+      replicas: 30  # 30 worker
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    command: celery -A tasks worker --loglevel=info --concurrency=1
+
+  # ============================================
+  # Celery Flower - Monitoring UI (Opsiyonel)
+  # ============================================
+  flower:
+    image: mher/flower:latest
+    container_name: analysis-flower
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_PORT: 5555
+      FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+    ports:
+      - "5555:5555"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: analysis-network
