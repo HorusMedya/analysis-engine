@@ -96,8 +96,8 @@ def get_odds_columns(site_id):
         'under_05': f'c_ftu05_{site_id}',      # 0.5 Alt
         
         # Karşılıklı Gol - Kapanış
-        'btts_yes': f'c_bty_{site_id}',        # Karşılıklı Gol Var
-        'btts_no': f'c_btn_{site_id}',         # Karşılıklı Gol Yok
+        'btts_yes': f'c_btts1_{site_id}',       # Karşılıklı Gol Var
+        'btts_no': f'c_btts2_{site_id}',        # Karşılıklı Gol Yok
         
         # Çifte Şans - Kapanış
         '1x': f'c_ftdc1x_{site_id}',           # 1 veya X
