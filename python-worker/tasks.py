@@ -231,7 +231,7 @@ def get_filtered_history(conn, table_name, match_row, filters, match_date, limit
             except (ValueError, TypeError):
                 match_val_float = None
             
-            if operator == '=' or operator == '':
+            if operator == '=' or operator == '' or operator == 'equals' or operator == 'odds_equal':
                 # Eşit: tam değer eşleşmesi
                 if match_val_float is not None:
                     where_conditions.append(f"{field} = :{param_name}")
@@ -241,7 +241,7 @@ def get_filtered_history(conn, table_name, match_row, filters, match_date, limit
                     params[param_name] = match_value
                 applied_filters.append(f"{field} = {match_value}")
                     
-            elif operator == '!=' and match_val_float is not None:
+            elif (operator == '!=' or operator == 'not_equals') and match_val_float is not None:
                 where_conditions.append(f"{field} != :{param_name}")
                 params[param_name] = match_val_float
                 applied_filters.append(f"{field} != {match_value}")
@@ -266,9 +266,12 @@ def get_filtered_history(conn, table_name, match_row, filters, match_date, limit
                 params[param_name] = match_val_float
                 applied_filters.append(f"{field} <= {match_value}")
                 
-            elif operator == '-' and match_val_float is not None:
-                # Negatif aralık: match_value - offset ile match_value arası
-                offset = float(offset_value) if offset_value else 0.05
+            elif match_val_float is not None and operator.startswith('-') and not operator.startswith('-+'):
+                # Negatif aralık: -0.05, -0.10, -0.20, -0.50 veya genel '-'
+                try:
+                    offset = abs(float(operator))
+                except (ValueError, TypeError):
+                    offset = float(offset_value) if offset_value else 0.05
                 min_val = match_val_float - offset
                 max_val = match_val_float
                 where_conditions.append(f"{field} BETWEEN :{param_name}_min AND :{param_name}_max")
@@ -276,9 +279,12 @@ def get_filtered_history(conn, table_name, match_row, filters, match_date, limit
                 params[f"{param_name}_max"] = max_val
                 applied_filters.append(f"{field} [{min_val:.2f}, {max_val:.2f}]")
                 
-            elif operator == '+' and match_val_float is not None:
-                # Pozitif aralık: match_value ile match_value + offset arası
-                offset = float(offset_value) if offset_value else 0.05
+            elif match_val_float is not None and operator.startswith('+'):
+                # Pozitif aralık: +0.05, +0.10, +0.20, +0.50 veya genel '+'
+                try:
+                    offset = abs(float(operator))
+                except (ValueError, TypeError):
+                    offset = float(offset_value) if offset_value else 0.05
                 min_val = match_val_float
                 max_val = match_val_float + offset
                 where_conditions.append(f"{field} BETWEEN :{param_name}_min AND :{param_name}_max")
@@ -286,15 +292,22 @@ def get_filtered_history(conn, table_name, match_row, filters, match_date, limit
                 params[f"{param_name}_max"] = max_val
                 applied_filters.append(f"{field} [{min_val:.2f}, {max_val:.2f}]")
                 
-            elif (operator == '-+' or operator == '±') and match_val_float is not None:
-                # Tolerans: match_value ± offset
-                offset = float(offset_value) if offset_value else 0.05
+            elif match_val_float is not None and (operator == '-+' or operator.startswith('±')):
+                # Tolerans: ±0.05, ±0.10, ±0.20, ±0.50 veya genel '-+' / '±'
+                try:
+                    offset = abs(float(operator.replace('±', '')))
+                except (ValueError, TypeError):
+                    offset = float(offset_value) if offset_value else 0.05
                 min_val = match_val_float - offset
                 max_val = match_val_float + offset
                 where_conditions.append(f"{field} BETWEEN :{param_name}_min AND :{param_name}_max")
                 params[f"{param_name}_min"] = min_val
                 params[f"{param_name}_max"] = max_val
                 applied_filters.append(f"{field} ±{offset} [{min_val:.2f}, {max_val:.2f}]")
+            
+            else:
+                # Tanınmayan operatör - loglayıp atla
+                logger.warning(f"Tanınmayan operatör: '{operator}' (field: {field})")
         
         if len(where_conditions) <= 2:
             # Hiç filtre uygulanamadı
