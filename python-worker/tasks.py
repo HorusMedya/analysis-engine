@@ -103,6 +103,14 @@ def get_odds_columns(site_id):
         'btts_yes': f'c_btts1_{site_id}',       # Karşılıklı Gol Var
         'btts_no': f'c_btts2_{site_id}',        # Karşılıklı Gol Yok
         
+        # İlk Yarı Over/Under 0.5 - Kapanış
+        'fh_over_05': f'c_sto05_{site_id}',     # İY 0.5 Üst
+        'fh_under_05': f'c_stu05_{site_id}',    # İY 0.5 Alt
+        
+        # İlk Yarı Over/Under 1.5 - Kapanış
+        'fh_over_15': f'c_sto15_{site_id}',     # İY 1.5 Üst
+        'fh_under_15': f'c_stu15_{site_id}',    # İY 1.5 Alt
+        
         # Çifte Şans - Kapanış
         '1x': f'c_ftdc1x_{site_id}',           # 1 veya X
         '12': f'c_ftdc12_{site_id}',           # 1 veya 2
